@@ -6,7 +6,8 @@ const app = express();
 
 // Middleware para JSON e CORS
 app.use(express.json());
-app.use(cors({ origin: 'https://vieirain100-2.vercel.app/' }));
+app.use(cors({ origin: '*' }));
+
 
 // Configuração do pool de conexões MySQL
 const dbConfig = {

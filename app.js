@@ -3,7 +3,6 @@ const mysql = require('mysql2');
 const cors = require('cors');
 
 const app = express();
-const port = process.env.PORT || 5000;
 
 // Middleware para JSON e CORS
 app.use(express.json());
@@ -151,6 +150,6 @@ app.get('/api/download', (req, res) => {
     });
 });
 
-app.listen(port, () => {
-    console.log(`Server running on port ${port}`);
+app.listen(5000, () => {
+    console.log('Server is running on port 3000');
 });

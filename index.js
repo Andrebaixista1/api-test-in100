@@ -1,59 +1,57 @@
 const express = require('express');
 const mysql = require('mysql2');
 const cors = require('cors');
-const cron = require('node-cron'); // Para agendar tarefas
+const cron = require('node-cron');
+require('dotenv').config();
+
 
 const app = express();
 
-// Middleware para JSON e CORS
 app.use(express.json());
 app.use(
   cors({
     origin: [
       'https://vieirain100-2.vercel.app',
-      'http://localhost:3000' // para ambiente local
+      'http://localhost:3000'
     ],
     methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization']
   })
 );
 
-// Configuração do pool de conexões MySQL
 const dbConfig = {
-  host: '45.179.91.180',
-  user: 'andrefelipe',
-  password: '899605aA@',
-  database: 'vieira_online',
-  port: 3306
-};
+    host: process.env.DB_HOST,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_NAME,
+    port: 3306
+  };
+  
 
 const pool = mysql.createPool(dbConfig);
 
-// Middleware para verificar IP autorizado e data de vencimento
 const checkAuthIp = (req, res, next) => {
   const requestIp = req.headers['x-forwarded-for'] || req.connection.remoteAddress;
   const ip = requestIp.replace(/^::ffff:/, '');
   const now = new Date();
-  const currentDate = now.toISOString().slice(0, 19).replace('T', ' ');  // Formato 'YYYY-MM-DD HH:mm:ss'
+  const currentDate = now.toISOString().slice(0, 19).replace('T', ' ');
 
-  // Verifica se o IP está cadastrado E se a data_vencimento não expirou
   pool.query(
-    "SELECT * FROM auth_ip2 WHERE ip_address = ? AND data_vencimento >= ?",
+    'SELECT * FROM auth_ip2 WHERE ip_address = ? AND data_vencimento >= ?',
     [ip, currentDate],
     (err, results) => {
       if (err) {
         return res.status(500).json({ success: false, error: err.message });
       }
       if (results.length === 0) {
-        return res.status(403).json({ success: false, message: "IP não autorizado ou vencido" });
+        return res.status(403).json({ success: false, message: 'IP Externo Bloqueado' });
       }
       next();
     }
   );
 };
 
-// Rota de teste (não protegida)
-app.get('/test', checkAuthIp, (req, res) => {
+app.get('/test', (req, res) => {
   pool.query('SELECT * FROM inss_higienizado LIMIT 1', (err, results) => {
     if (err) {
       return res.status(500).json({ status: 'error', message: err.message });
@@ -61,19 +59,18 @@ app.get('/test', checkAuthIp, (req, res) => {
     if (results.length > 0) {
       res.json({
         status: 'success',
-        message: 'API está rodando e conectada ao MySQL!',
+        message: 'API conectada ao MySQL!',
         data: results[0]
       });
     } else {
       res.json({
         status: 'success',
-        message: 'API está rodando, mas a tabela inss_higienizado está vazia.'
+        message: 'API rodando, mas a tabela inss_higienizado está vazia.'
       });
     }
   });
 });
 
-// Rota de inserção com atualização se já existir o mesmo CPF e NB
 app.post('/api/insert', checkAuthIp, (req, res) => {
   const data = req.body;
   const query = `
@@ -159,7 +156,6 @@ app.post('/api/insert', checkAuthIp, (req, res) => {
   });
 });
 
-// DELETE: exclui todos os registros com o mesmo nome_arquivo
 app.delete('/api/delete', checkAuthIp, (req, res) => {
   const nome_arquivo = req.query.nome_arquivo;
   if (!nome_arquivo) {
@@ -174,7 +170,6 @@ app.delete('/api/delete', checkAuthIp, (req, res) => {
   });
 });
 
-// GET: retorna os registros com o mesmo nome_arquivo para download
 app.get('/api/download', checkAuthIp, (req, res) => {
   const nome_arquivo = req.query.nome_arquivo;
   if (!nome_arquivo) {
@@ -189,24 +184,20 @@ app.get('/api/download', checkAuthIp, (req, res) => {
   });
 });
 
-// Inicia o servidor
 app.listen(5000, () => {
   console.log('Server is running on port 5000');
 });
 
-// Tarefa agendada: Executa 1 vez por dia para excluir registros antigos da tabela inss_higienizado
-cron.schedule('0 0 * * *', () => { // executa diariamente à meia-noite
+cron.schedule('0 0 * * *', () => {
   const deleteQuery = `
     DELETE FROM inss_higienizado
     WHERE data_hora_registro < DATE_SUB(NOW(), INTERVAL 7 DAY)
   `;
   pool.query(deleteQuery, (err, results) => {
     if (err) {
-      console.error("Erro ao excluir registros antigos:", err.message);
+      console.error('Erro ao excluir registros antigos:', err.message);
     } else {
       console.log(`${results.affectedRows} registros antigos excluídos.`);
     }
   });
 });
-
-

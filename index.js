@@ -20,12 +20,19 @@ app.use(
   })
 );
 
-app.use((err, req, res, next) => {
-  if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
-    return res.status(400).json({ success: false, error: "JSON mal formatado." });
-  }
+// app.use((err, req, res, next) => {
+//   if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
+//     return res.status(400).json({ success: false, error: "JSON mal formatado." });
+//   }
+//   next();
+// });
+
+app.use(function(req, res, next) {
+  res.header("Access-Control-Allow-Origin", "*"); // Ou, substitua "*" pelos domínios que você quer permitir
+  res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
   next();
 });
+
 
 const dbConfig = {
   host: process.env.DB_HOST,

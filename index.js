@@ -191,7 +191,7 @@ app.listen(5000, () => {
 cron.schedule('0 0 * * *', () => {
   const deleteQuery = `
     DELETE FROM inss_higienizado
-    WHERE data_hora_registro < DATE_SUB(NOW(), INTERVAL 7 DAY)
+    WHERE data_hora_registro < DATE_SUB(NOW(), INTERVAL 30 DAY)
   `;
   pool.query(deleteQuery, (err, results) => {
     if (err) {

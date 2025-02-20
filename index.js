@@ -8,17 +8,16 @@ require('dotenv').config();
 const app = express();
 
 app.use(express.json());
-app.use(
-  cors({
-    origin: [
-      'https://vieirain100-2.vercel.app',
-      'http://localhost:3000',
-      'https://interno-vin100.vercel.app/'
-    ],
-    methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization']
-  })
-);
+app.use(cors({
+  origin: [
+    'https://vieirain100-2.vercel.app',
+    'http://localhost:3000',
+    'https://interno-vin100.vercel.app/',
+  ],
+  methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+}));
+
 
 // app.use((err, req, res, next) => {
 //   if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {

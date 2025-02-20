@@ -1,9 +1,9 @@
+// BACKEND (index.js)
 const express = require('express');
 const mysql = require('mysql2');
 const cors = require('cors');
 const cron = require('node-cron');
 require('dotenv').config();
-
 
 const app = express();
 
@@ -19,23 +19,29 @@ app.use(
   })
 );
 
+app.use((err, req, res, next) => {
+  if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
+    return res.status(400).json({ success: false, error: "JSON mal formatado." });
+  }
+  next();
+});
+
 const dbConfig = {
-    host: process.env.DB_HOST,
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
-    database: process.env.DB_NAME,
-    port: 3306
-  };
-  
+  host: process.env.DB_HOST,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_NAME,
+  port: 3306
+};
 
 const pool = mysql.createPool(dbConfig);
 
 const checkAuthIp = (req, res, next) => {
   const requestIp = req.headers['x-forwarded-for'] || req.connection.remoteAddress;
   const ip = requestIp.replace(/^::ffff:/, '');
+  req.clientIp = ip;
   const now = new Date();
   const currentDate = now.toISOString().slice(0, 19).replace('T', ' ');
-
   pool.query(
     'SELECT * FROM auth_ip2 WHERE ip_address = ? AND data_vencimento >= ?',
     [ip, currentDate],
@@ -50,6 +56,50 @@ const checkAuthIp = (req, res, next) => {
     }
   );
 };
+
+const checkAuthIpInsert = (req, res, next) => {
+  const requestIp = req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+  const ip = requestIp.replace(/^::ffff:/, '');
+  req.clientIp = ip;
+  const now = new Date();
+  const currentDate = now.toISOString().slice(0, 19).replace('T', ' ');
+  pool.query(
+    'SELECT * FROM auth_ip2 WHERE ip_address = ? AND data_vencimento >= ?',
+    [ip, currentDate],
+    (err, results) => {
+      if (err) {
+        return res.status(500).json({ success: false, error: err.message });
+      }
+      if (results.length === 0) {
+        return res.status(403).json({ success: false, message: 'IP Externo Bloqueado' });
+      }
+      if (results[0].limite_consultas_mensal <= 0) {
+        return res.status(403).json({ success: false, message: 'Limite de consultas mensal atingido' });
+      }
+      next();
+    }
+  );
+};
+
+app.get('/api/limit', (req, res) => {
+  const requestIp = req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+  const ip = requestIp.replace(/^::ffff:/, '');
+  const now = new Date();
+  const currentDate = now.toISOString().slice(0, 19).replace('T', ' ');
+  pool.query(
+    'SELECT limite_consultas_mensal FROM auth_ip2 WHERE ip_address = ? AND data_vencimento >= ?',
+    [ip, currentDate],
+    (err, results) => {
+      if (err) {
+        return res.status(500).json({ success: false, error: err.message });
+      }
+      if (results.length === 0) {
+        return res.status(200).json({ success: false, limite: 0 });
+      }
+      res.json({ success: true, limite: results[0].limite_consultas_mensal });
+    }
+  );
+});
 
 app.get('/test', (req, res) => {
   pool.query('SELECT * FROM inss_higienizado LIMIT 1', (err, results) => {
@@ -71,7 +121,7 @@ app.get('/test', (req, res) => {
   });
 });
 
-app.post('/api/insert', checkAuthIp, (req, res) => {
+app.post('/api/insert', checkAuthIpInsert, (req, res) => {
   const data = req.body;
   const query = `
     INSERT INTO inss_higienizado (
@@ -148,11 +198,20 @@ app.post('/api/insert', checkAuthIp, (req, res) => {
     data.data_hora_registro,
     data.nome_arquivo
   ];
-  pool.query(query, params, (err, result) => {
+  pool.query(query, params, (err) => {
     if (err) {
       return res.status(500).json({ success: false, error: err.message });
     }
-    res.json({ success: true, results: 'Dados inseridos/atualizados com sucesso!' });
+    pool.query(
+      'UPDATE auth_ip2 SET limite_consultas_mensal = GREATEST(limite_consultas_mensal - 1, 0) WHERE ip_address = ?',
+      [req.clientIp],
+      (updateErr) => {
+        if (updateErr) {
+          console.error("Erro ao atualizar limite_consultas_mensal:", updateErr.message);
+        }
+        res.json({ success: true, results: 'Dados inseridos/atualizados com sucesso!' });
+      }
+    );
   });
 });
 

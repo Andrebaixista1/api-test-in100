@@ -11,7 +11,9 @@ app.use(express.json());
 app.use(cors({
   origin: [
     'https://vieirain100-2.vercel.app',
-    'http://localhost:3000'
+    'http://localhost:3000',
+    'http://localhost:20251/',
+    'https://consulta-in100-vi.vercel.app/'
   ],
   methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],

@@ -11,13 +11,14 @@ const app = express();
 app.use(express.json());
 app.use(cors({
   origin: [
-    '*'
+    'https://vieirain100-2.vercel.app',
+    'http://localhost:3000'
   ],
   methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 
-app.use((req, res, next) => {
+app.use(function(req, res, next) {
   res.header("Access-Control-Allow-Origin", "*");
   res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
   next();
@@ -43,8 +44,12 @@ const checkAuthIp = (req, res, next) => {
     'SELECT * FROM auth_ip2 WHERE ip_address = ? AND data_vencimento >= ?',
     [ip, currentDate],
     (err, results) => {
-      if (err) return res.status(500).json({ success: false, error: err.message });
-      if (results.length === 0) return res.status(403).json({ success: false, message: 'IP Externo Bloqueado' });
+      if (err) {
+        return res.status(500).json({ success: false, error: err.message });
+      }
+      if (results.length === 0) {
+        return res.status(403).json({ success: false, message: 'IP Externo Bloqueado' });
+      }
       next();
     }
   );
@@ -60,10 +65,15 @@ const checkAuthIpInsert = (req, res, next) => {
     'SELECT * FROM auth_ip2 WHERE ip_address = ? AND data_vencimento >= ?',
     [ip, currentDate],
     (err, results) => {
-      if (err) return res.status(500).json({ success: false, error: err.message });
-      if (results.length === 0) return res.status(403).json({ success: false, message: 'IP Externo Bloqueado' });
-      if (results[0].limite_consultas_mensal <= 0)
+      if (err) {
+        return res.status(500).json({ success: false, error: err.message });
+      }
+      if (results.length === 0) {
+        return res.status(403).json({ success: false, message: 'IP Externo Bloqueado' });
+      }
+      if (results[0].limite_consultas_mensal <= 0) {
         return res.status(403).json({ success: false, message: 'Limite de consultas mensal atingido' });
+      }
       next();
     }
   );
@@ -78,8 +88,12 @@ app.get('/api/limit', (req, res) => {
     'SELECT limite_consultas_mensal FROM auth_ip2 WHERE ip_address = ? AND data_vencimento >= ?',
     [ip, currentDate],
     (err, results) => {
-      if (err) return res.status(500).json({ success: false, error: err.message });
-      if (results.length === 0) return res.status(200).json({ success: false, limite: 0 });
+      if (err) {
+        return res.status(500).json({ success: false, error: err.message });
+      }
+      if (results.length === 0) {
+        return res.status(200).json({ success: false, limite: 0 });
+      }
       res.json({ success: true, limite: results[0].limite_consultas_mensal });
     }
   );
@@ -87,11 +101,20 @@ app.get('/api/limit', (req, res) => {
 
 app.get('/test', (req, res) => {
   pool.query('SELECT * FROM inss_higienizado LIMIT 1', (err, results) => {
-    if (err) return res.status(500).json({ status: 'error', message: err.message });
+    if (err) {
+      return res.status(500).json({ status: 'error', message: err.message });
+    }
     if (results.length > 0) {
-      res.json({ status: 'success', message: 'API conectada ao MySQL!', data: results[0] });
+      res.json({
+        status: 'success',
+        message: 'API conectada ao MySQL!',
+        data: results[0]
+      });
     } else {
-      res.json({ status: 'success', message: 'API rodando, mas a tabela inss_higienizado está vazia.' });
+      res.json({
+        status: 'success',
+        message: 'API rodando, mas a tabela inss_higienizado está vazia.'
+      });
     }
   });
 });
@@ -109,7 +132,7 @@ app.post('/api/query-inss', checkAuthIp, async (req, res) => {
         identity: cpf,
         benefitNumber: nb,
         lastDays: 0,
-        attempts: 60
+        attemps: 60
       })
     });
     const data = await response.json();
@@ -197,12 +220,16 @@ app.post('/api/insert', checkAuthIpInsert, (req, res) => {
     data.nome_arquivo
   ];
   pool.query(query, params, (err) => {
-    if (err) return res.status(500).json({ success: false, error: err.message });
+    if (err) {
+      return res.status(500).json({ success: false, error: err.message });
+    }
     pool.query(
       'UPDATE auth_ip2 SET limite_consultas_mensal = GREATEST(limite_consultas_mensal - 1, 0) WHERE ip_address = ?',
       [req.clientIp],
       (updateErr) => {
-        if (updateErr) console.error("Erro ao atualizar limite_consultas_mensal:", updateErr.message);
+        if (updateErr) {
+          console.error("Erro ao atualizar limite_consultas_mensal:", updateErr.message);
+        }
         res.json({ success: true, results: 'Dados inseridos/atualizados com sucesso!' });
       }
     );
@@ -211,20 +238,28 @@ app.post('/api/insert', checkAuthIpInsert, (req, res) => {
 
 app.delete('/api/delete', checkAuthIp, (req, res) => {
   const nome_arquivo = req.query.nome_arquivo;
-  if (!nome_arquivo) return res.status(400).json({ success: false, message: 'nome_arquivo é obrigatório' });
+  if (!nome_arquivo) {
+    return res.status(400).json({ success: false, message: 'nome_arquivo é obrigatório' });
+  }
   const query = 'DELETE FROM inss_higienizado WHERE nome_arquivo = ?';
   pool.query(query, [nome_arquivo], (err, result) => {
-    if (err) return res.status(500).json({ success: false, error: err.message });
+    if (err) {
+      return res.status(500).json({ success: false, error: err.message });
+    }
     res.json({ success: true, results: `${result.affectedRows} registros excluídos` });
   });
 });
 
 app.get('/api/download', checkAuthIp, (req, res) => {
   const nome_arquivo = req.query.nome_arquivo;
-  if (!nome_arquivo) return res.status(400).json({ success: false, message: 'nome_arquivo é obrigatório' });
+  if (!nome_arquivo) {
+    return res.status(400).json({ success: false, message: 'nome_arquivo é obrigatório' });
+  }
   const query = 'SELECT * FROM inss_higienizado WHERE nome_arquivo = ?';
   pool.query(query, [nome_arquivo], (err, results) => {
-    if (err) return res.status(500).json({ success: false, error: err.message });
+    if (err) {
+      return res.status(500).json({ success: false, error: err.message });
+    }
     res.json({ success: true, data: results });
   });
 });
@@ -239,7 +274,10 @@ cron.schedule('0 0 * * *', () => {
     WHERE data_hora_registro < DATE_SUB(NOW(), INTERVAL 30 DAY)
   `;
   pool.query(deleteQuery, (err, results) => {
-    if (err) console.error('Erro ao excluir registros antigos:', err.message);
-    else console.log(`${results.affectedRows} registros antigos excluídos.`);
+    if (err) {
+      console.error('Erro ao excluir registros antigos:', err.message);
+    } else {
+      console.log(`${results.affectedRows} registros antigos excluídos.`);
+    }
   });
 });

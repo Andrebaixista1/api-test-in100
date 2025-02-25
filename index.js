@@ -4,6 +4,7 @@ const mysql = require('mysql2');
 const cors = require('cors');
 const cron = require('node-cron');
 const fetch = require('node-fetch');
+
 require('dotenv').config();
 
 const app = express();
@@ -130,7 +131,9 @@ app.post('/api/query-inss', checkAuthIp, async (req, res) => {
       },
       body: JSON.stringify({
         identity: cpf,
-        benefitNumber: nb
+        benefitNumber: nb,
+        lastDays: 0,
+        attempts: 60
       })
     });
     const data = await response.json();

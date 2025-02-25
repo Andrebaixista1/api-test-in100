@@ -12,6 +12,7 @@ app.use(express.json());
 app.use(cors({
   origin: [
     'https://vieirain100-2.vercel.app',
+    'https://api-js-in100.vercel.app/',
     'http://localhost:3000'
   ],
   methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],

@@ -13,11 +13,13 @@ app.use(cors({
     'https://vieirain100-2.vercel.app',
     'http://localhost:3000',
     'http://localhost:20251/',
-    'https://consulta-in100-vi.vercel.app/'
+    'https://consulta-in100-vi.vercel.app/',
++   'https://api-js-in100.vercel.app'
   ],
   methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
+
 
 const dbConfig = {
   host: process.env.DB_HOST,

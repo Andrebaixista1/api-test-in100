@@ -6,20 +6,19 @@ const cron = require('node-cron');
 require('dotenv').config();
 
 const app = express();
-
 app.use(express.json());
+
 app.use(cors({
   origin: [
     'https://vieirain100-2.vercel.app',
     'http://localhost:3000',
-    'http://localhost:20251/',
-    'https://consulta-in100-vi.vercel.app/',
-+   'https://api-js-in100.vercel.app'
+    'http://localhost:20251',
+    'https://consulta-in100-vi.vercel.app',
+    'https://api-js-in100.vercel.app'
   ],
   methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'apiKey', 'x-client-ip'],
 }));
-
 
 const dbConfig = {
   host: process.env.DB_HOST,
@@ -32,11 +31,16 @@ const dbConfig = {
 const pool = mysql.createPool(dbConfig);
 
 const checkAuthIp = (req, res, next) => {
-  const requestIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
-  const ip = requestIp.replace(/^::ffff:/, '');
+  // Aqui você decide se vai usar x-client-ip ou x-forwarded-for
+  // Exemplo: se chegar x-client-ip do front, pega ele
+  const headerIp = req.headers['x-client-ip'];
+  let ip = headerIp || req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+  ip = ip.replace(/^::ffff:/, '');
   req.clientIp = ip;
+
   const now = new Date();
   const currentDate = now.toISOString().slice(0, 19).replace('T', ' ');
+
   pool.query(
     'SELECT * FROM auth_ip2 WHERE ip_address = ? AND data_vencimento >= ?',
     [ip, currentDate],
@@ -53,11 +57,14 @@ const checkAuthIp = (req, res, next) => {
 };
 
 const checkAuthIpInsert = (req, res, next) => {
-  const requestIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
-  const ip = requestIp.replace(/^::ffff:/, '');
+  const headerIp = req.headers['x-client-ip'];
+  let ip = headerIp || req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+  ip = ip.replace(/^::ffff:/, '');
   req.clientIp = ip;
+
   const now = new Date();
   const currentDate = now.toISOString().slice(0, 19).replace('T', ' ');
+
   pool.query(
     'SELECT * FROM auth_ip2 WHERE ip_address = ? AND data_vencimento >= ?',
     [ip, currentDate],
@@ -77,10 +84,13 @@ const checkAuthIpInsert = (req, res, next) => {
 };
 
 app.get('/api/limit', (req, res) => {
-  const requestIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
-  const ip = requestIp.replace(/^::ffff:/, '');
+  const headerIp = req.headers['x-client-ip'];
+  let ip = headerIp || req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+  ip = ip.replace(/^::ffff:/, '');
+
   const now = new Date();
   const currentDate = now.toISOString().slice(0, 19).replace('T', ' ');
+
   pool.query(
     'SELECT limite_consultas_mensal FROM auth_ip2 WHERE ip_address = ? AND data_vencimento >= ?',
     [ip, currentDate],
@@ -242,6 +252,7 @@ app.listen(5000, () => {
   console.log('Server is running on port 5000');
 });
 
+// Exclui registros antigos a cada dia, 00:00
 cron.schedule('0 0 * * *', () => {
   const deleteQuery = `
     DELETE FROM inss_higienizado

@@ -3,7 +3,6 @@ const express = require('express');
 const mysql = require('mysql2');
 const cors = require('cors');
 const cron = require('node-cron');
-const fetch = require('node-fetch');
 require('dotenv').config();
 
 const app = express();
@@ -18,11 +17,20 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 
+
+// app.use((err, req, res, next) => {
+//   if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
+//     return res.status(400).json({ success: false, error: "JSON mal formatado." });
+//   }
+//   next();
+// });
+
 app.use(function(req, res, next) {
-  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Origin", "*"); // Ou, substitua "*" pelos domínios que você quer permitir
   res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
   next();
 });
+
 
 const dbConfig = {
   host: process.env.DB_HOST,
@@ -117,29 +125,6 @@ app.get('/test', (req, res) => {
       });
     }
   });
-});
-
-app.post('/api/query-inss', checkAuthIp, async (req, res) => {
-  try {
-    const { cpf, nb } = req.body;
-    const response = await fetch('https://api.ajin.io/v3/query-inss-balances/finder/await', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        apiKey: process.env.API_KEY_AJIN
-      },
-      body: JSON.stringify({
-        identity: cpf,
-        benefitNumber: nb,
-        lastDays: 0,
-        attemps: 60
-      })
-    });
-    const data = await response.json();
-    return res.json(data);
-  } catch (err) {
-    return res.status(500).json({ error: true, message: err.message });
-  }
 });
 
 app.post('/api/insert', checkAuthIpInsert, (req, res) => {

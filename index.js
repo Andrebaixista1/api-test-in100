@@ -17,21 +17,6 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 
-
-// app.use((err, req, res, next) => {
-//   if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
-//     return res.status(400).json({ success: false, error: "JSON mal formatado." });
-//   }
-//   next();
-// });
-
-app.use(function(req, res, next) {
-  res.header("Access-Control-Allow-Origin", "*"); // Ou, substitua "*" pelos domínios que você quer permitir
-  res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
-  next();
-});
-
-
 const dbConfig = {
   host: process.env.DB_HOST,
   user: process.env.DB_USER,
@@ -43,7 +28,7 @@ const dbConfig = {
 const pool = mysql.createPool(dbConfig);
 
 const checkAuthIp = (req, res, next) => {
-  const requestIp = req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+  const requestIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
   const ip = requestIp.replace(/^::ffff:/, '');
   req.clientIp = ip;
   const now = new Date();
@@ -64,7 +49,7 @@ const checkAuthIp = (req, res, next) => {
 };
 
 const checkAuthIpInsert = (req, res, next) => {
-  const requestIp = req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+  const requestIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
   const ip = requestIp.replace(/^::ffff:/, '');
   req.clientIp = ip;
   const now = new Date();
@@ -88,7 +73,7 @@ const checkAuthIpInsert = (req, res, next) => {
 };
 
 app.get('/api/limit', (req, res) => {
-  const requestIp = req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+  const requestIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
   const ip = requestIp.replace(/^::ffff:/, '');
   const now = new Date();
   const currentDate = now.toISOString().slice(0, 19).replace('T', ' ');
@@ -266,3 +251,4 @@ cron.schedule('0 0 * * *', () => {
     }
   });
 });
+

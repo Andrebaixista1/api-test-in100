@@ -62,13 +62,13 @@ const checkAuthIp2 = (req, res, next) => {
   const headerIp = req.headers["x-client-ip"];
   let ip = headerIp || req.headers["x-forwarded-for"] || req.socket.remoteAddress;
   ip = ip.replace(/^::ffff:/, "");
-  if (ip !== "26.101.42.111") {
+  if (ip !== "201.0.21.143") {
     return res.status(403).json({ success: false, message: "IP não autorizado" });
   }
   next();
 };
 
-
+const checkAuthIpInsert2 = checkAuthIp2;
 
 app.get("/api/auth-ips", checkAuthIp2, (req, res) => {
   const query = `
@@ -177,6 +177,7 @@ app.delete("/api/auth-ips/:id", checkAuthIp2, (req, res) => {
     res.json({ success: true, message: "Registro excluído com sucesso!" });
   });
 });
+
 
 app.get("/api/limit", (req, res) => {
   const headerIp = req.headers["x-client-ip"];

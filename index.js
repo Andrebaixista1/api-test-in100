@@ -57,7 +57,20 @@ const checkAuthIp = (req, res, next) => {
 // Usamos o mesmo middleware para inserções
 const checkAuthIpInsert = checkAuthIp;
 
-app.get("/api/auth-ips", checkAuthIp, (req, res) => {
+// Middleware: somente permite acesso se o IP for exatamente "26.101.42.111"
+const checkAuthIp2 = (req, res, next) => {
+  const headerIp = req.headers["x-client-ip"];
+  let ip = headerIp || req.headers["x-forwarded-for"] || req.socket.remoteAddress;
+  ip = ip.replace(/^::ffff:/, "");
+  if (ip !== "26.101.42.111") {
+    return res.status(403).json({ success: false, message: "IP não autorizado" });
+  }
+  next();
+};
+
+
+
+app.get("/api/auth-ips", checkAuthIp2, (req, res) => {
   const query = `
     SELECT
       id,
@@ -78,7 +91,7 @@ app.get("/api/auth-ips", checkAuthIp, (req, res) => {
   });
 });
 
-app.post("/api/auth-ips", checkAuthIp, (req, res) => {
+app.post("/api/auth-ips", checkAuthIp2, (req, res) => {
   const { ip_address, description, data_vencimento, limite_consultas_mensal } = req.body;
   if (!ip_address || !data_vencimento || !limite_consultas_mensal) {
     return res.status(400).json({ success: false, message: "Dados incompletos" });
@@ -123,7 +136,7 @@ app.post("/api/auth-ips", checkAuthIp, (req, res) => {
   });
 });
 
-app.put("/api/auth-ips/:id", checkAuthIp, (req, res) => {
+app.put("/api/auth-ips/:id", checkAuthIp2, (req, res) => {
   const { id } = req.params;
   const { ip_address, description, data_vencimento, limite_consultas_mensal } = req.body;
   const novoLimite = parseInt(limite_consultas_mensal, 10) || 0;
@@ -151,7 +164,7 @@ app.put("/api/auth-ips/:id", checkAuthIp, (req, res) => {
   });
 });
 
-app.delete("/api/auth-ips/:id", checkAuthIp, (req, res) => {
+app.delete("/api/auth-ips/:id", checkAuthIp2, (req, res) => {
   const { id } = req.params;
   const query = "DELETE FROM auth_ip2 WHERE id = ?";
   pool.query(query, [id], (err, result) => {

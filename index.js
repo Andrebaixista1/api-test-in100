@@ -1,99 +1,175 @@
 // BACKEND (index.js)
-const express = require('express');
-const mysql = require('mysql2');
-const cors = require('cors');
-const cron = require('node-cron');
-require('dotenv').config();
+const express = require("express");
+const mysql = require("mysql2");
+const cors = require("cors");
+const cron = require("node-cron");
+require("dotenv").config();
 
 const app = express();
 app.use(express.json());
 
-app.use(cors({
-  origin: [
-    'https://vieirain100-2.vercel.app',
-    'http://localhost:3000',
-    'http://localhost:20251',
-    'https://consulta-in100-vi.vercel.app',
-    'https://api-js-in100.vercel.app'
-  ],
-  methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'apiKey', 'x-client-ip'],
-}));
+app.use(
+  cors({
+    origin: [
+      "http://localhost:3000",
+      "http://localhost:20251",
+      "https://vieirain100-2.vercel.app",
+      "https://consulta-in100-vi.vercel.app",
+      "https://api-js-in100.vercel.app",
+    ],
+    methods: ["GET", "POST", "DELETE", "OPTIONS", "PUT"],
+    allowedHeaders: ["Content-Type", "Authorization", "apiKey", "x-client-ip"],
+  })
+);
 
 const dbConfig = {
   host: process.env.DB_HOST,
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME,
-  port: 3306
+  port: 3306,
 };
 
 const pool = mysql.createPool(dbConfig);
 
 const checkAuthIp = (req, res, next) => {
-  // Aqui você decide se vai usar x-client-ip ou x-forwarded-for
-  // Exemplo: se chegar x-client-ip do front, pega ele
-  const headerIp = req.headers['x-client-ip'];
-  let ip = headerIp || req.headers['x-forwarded-for'] || req.socket.remoteAddress;
-  ip = ip.replace(/^::ffff:/, '');
-  req.clientIp = ip;
-
-  const now = new Date();
-  const currentDate = now.toISOString().slice(0, 19).replace('T', ' ');
-
-  pool.query(
-    'SELECT * FROM auth_ip2 WHERE ip_address = ? AND data_vencimento >= ?',
-    [ip, currentDate],
-    (err, results) => {
-      if (err) {
-        return res.status(500).json({ success: false, error: err.message });
-      }
-      if (results.length === 0) {
-        return res.status(403).json({ success: false, message: 'IP Externo Bloqueado' });
-      }
-      next();
-    }
-  );
+  const headerIp = req.headers["x-client-ip"];
+  let ip = headerIp || req.headers["x-forwarded-for"] || req.socket.remoteAddress;
+  ip = ip.replace(/^::ffff:/, "");
+  if (ip !== "201.0.21.143") {
+    return res.status(403).json({ success: false, message: "IP não autorizado" });
+  }
+  next();
 };
 
 const checkAuthIpInsert = (req, res, next) => {
-  const headerIp = req.headers['x-client-ip'];
-  let ip = headerIp || req.headers['x-forwarded-for'] || req.socket.remoteAddress;
-  ip = ip.replace(/^::ffff:/, '');
-  req.clientIp = ip;
+  const headerIp = req.headers["x-client-ip"];
+  let ip = headerIp || req.headers["x-forwarded-for"] || req.socket.remoteAddress;
+  ip = ip.replace(/^::ffff:/, "");
+  if (ip !== "201.0.21.143") {
+    return res.status(403).json({ success: false, message: "IP não autorizado" });
+  }
+  next();
+};
 
-  const now = new Date();
-  const currentDate = now.toISOString().slice(0, 19).replace('T', ' ');
+app.get("/api/auth-ips", checkAuthIp, (req, res) => {
+  const query = `
+    SELECT
+      id,
+      ip_address,
+      description,
+      DATE_FORMAT(data_ativacao, '%d/%m/%Y %H:%i:%s') AS data_ativacao,
+      DATE_FORMAT(data_vencimento, '%d/%m/%Y %H:%i:%s') AS data_vencimento,
+      limite_consultas_mensal,
+      carregado
+    FROM auth_ip2
+    ORDER BY id DESC
+  `;
+  pool.query(query, (err, results) => {
+    if (err) {
+      return res.status(500).json({ success: false, error: err.message });
+    }
+    res.json({ success: true, data: results });
+  });
+});
 
-  pool.query(
-    'SELECT * FROM auth_ip2 WHERE ip_address = ? AND data_vencimento >= ?',
-    [ip, currentDate],
-    (err, results) => {
+app.post("/api/auth-ips", checkAuthIp, (req, res) => {
+  const { ip_address, description, data_vencimento, limite_consultas_mensal } = req.body;
+  if (!ip_address || !data_vencimento || !limite_consultas_mensal) {
+    return res.status(400).json({ success: false, message: "Dados incompletos" });
+  }
+  const novoLimite = parseInt(limite_consultas_mensal, 10) || 0;
+  pool.query("SELECT id, carregado FROM auth_ip2 WHERE ip_address = ?", [ip_address], (selErr, selRes) => {
+    if (selErr) {
+      return res.status(500).json({ success: false, error: selErr.message });
+    }
+    if (selRes.length > 0) {
+      const oldCarregado = selRes[0].carregado || 0;
+      const somaCarregado = oldCarregado + novoLimite;
+      const updateQuery = `
+        UPDATE auth_ip2
+        SET description = ?, data_vencimento = ?, limite_consultas_mensal = ?, carregado = ?
+        WHERE id = ?
+      `;
+      pool.query(
+        updateQuery,
+        [description, data_vencimento, novoLimite, somaCarregado, selRes[0].id],
+        (upErr) => {
+          if (upErr) {
+            return res.status(500).json({ success: false, error: upErr.message });
+          }
+          return res.json({ success: true, message: "Registro atualizado e limite somado com sucesso!" });
+        }
+      );
+    } else {
+      const insertQuery = `
+        INSERT INTO auth_ip2
+          (ip_address, description, data_ativacao, data_vencimento, limite_consultas_mensal, carregado)
+        VALUES
+          (?, ?, NOW(), ?, ?, ?)
+      `;
+      pool.query(insertQuery, [ip_address, description, data_vencimento, novoLimite, novoLimite], (inErr, inRes) => {
+        if (inErr) {
+          return res.status(500).json({ success: false, error: inErr.message });
+        }
+        return res.json({ success: true, message: "Registro criado com sucesso!", insertId: inRes.insertId });
+      });
+    }
+  });
+});
+
+app.put("/api/auth-ips/:id", checkAuthIp, (req, res) => {
+  const { id } = req.params;
+  const { ip_address, description, data_vencimento, limite_consultas_mensal } = req.body;
+  const novoLimite = parseInt(limite_consultas_mensal, 10) || 0;
+  pool.query("SELECT carregado FROM auth_ip2 WHERE id = ?", [id], (selErr, selRes) => {
+    if (selErr) {
+      return res.status(500).json({ success: false, error: selErr.message });
+    }
+    if (!selRes.length) {
+      return res.status(404).json({ success: false, message: "Registro não encontrado." });
+    }
+    const oldCarregado = selRes[0].carregado || 0;
+    const somaCarregado = oldCarregado + novoLimite;
+    const query = `
+      UPDATE auth_ip2
+      SET ip_address = ?, description = ?, data_vencimento = ?, limite_consultas_mensal = ?, carregado = ?
+      WHERE id = ?
+    `;
+    const params = [ip_address, description, data_vencimento, novoLimite, somaCarregado, id];
+    pool.query(query, params, (err) => {
       if (err) {
         return res.status(500).json({ success: false, error: err.message });
       }
-      if (results.length === 0) {
-        return res.status(403).json({ success: false, message: 'IP Externo Bloqueado' });
-      }
-      if (results[0].limite_consultas_mensal <= 0) {
-        return res.status(403).json({ success: false, message: 'Limite de consultas mensal atingido' });
-      }
-      next();
+      res.json({ success: true, message: "Registro atualizado e limite somado com sucesso!" });
+    });
+  });
+});
+
+app.delete("/api/auth-ips/:id", checkAuthIp, (req, res) => {
+  const { id } = req.params;
+  const query = "DELETE FROM auth_ip2 WHERE id = ?";
+  pool.query(query, [id], (err, result) => {
+    if (err) {
+      return res.status(500).json({ success: false, error: err.message });
     }
-  );
-};
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ success: false, message: "Registro não encontrado." });
+    }
+    res.json({ success: true, message: "Registro excluído com sucesso!" });
+  });
+});
 
-app.get('/api/limit', (req, res) => {
-  const headerIp = req.headers['x-client-ip'];
-  let ip = headerIp || req.headers['x-forwarded-for'] || req.socket.remoteAddress;
-  ip = ip.replace(/^::ffff:/, '');
-
-  const now = new Date();
-  const currentDate = now.toISOString().slice(0, 19).replace('T', ' ');
-
+app.get("/api/limit", (req, res) => {
+  const headerIp = req.headers["x-client-ip"];
+  let ip = headerIp || req.headers["x-forwarded-for"] || req.socket.remoteAddress;
+  ip = ip.replace(/^::ffff:/, "");
+  if (ip !== "201.0.21.143") {
+    return res.status(403).json({ success: false, message: "IP não autorizado" });
+  }
   pool.query(
-    'SELECT limite_consultas_mensal FROM auth_ip2 WHERE ip_address = ? AND data_vencimento >= ?',
-    [ip, currentDate],
+    "SELECT limite_consultas_mensal FROM auth_ip2 WHERE ip_address = ? AND DATE(data_vencimento) >= CURDATE()",
+    [ip],
     (err, results) => {
       if (err) {
         return res.status(500).json({ success: false, error: err.message });
@@ -106,27 +182,27 @@ app.get('/api/limit', (req, res) => {
   );
 });
 
-app.get('/test', (req, res) => {
-  pool.query('SELECT * FROM inss_higienizado LIMIT 1', (err, results) => {
+app.get("/test", (req, res) => {
+  pool.query("SELECT * FROM inss_higienizado LIMIT 1", (err, results) => {
     if (err) {
-      return res.status(500).json({ status: 'error', message: err.message });
+      return res.status(500).json({ status: "error", message: err.message });
     }
     if (results.length > 0) {
       res.json({
-        status: 'success',
-        message: 'API conectada ao MySQL!',
-        data: results[0]
+        status: "success",
+        message: "API conectada ao MySQL!",
+        data: results[0],
       });
     } else {
       res.json({
-        status: 'success',
-        message: 'API rodando, mas a tabela inss_higienizado está vazia.'
+        status: "success",
+        message: "API rodando, mas a tabela inss_higienizado está vazia.",
       });
     }
   });
 });
 
-app.post('/api/insert', checkAuthIpInsert, (req, res) => {
+app.post("/api/insert", checkAuthIpInsert, (req, res) => {
   const data = req.body;
   const query = `
     INSERT INTO inss_higienizado (
@@ -201,31 +277,31 @@ app.post('/api/insert', checkAuthIpInsert, (req, res) => {
     data.numero_portabilidades,
     data.ip_origem,
     data.data_hora_registro,
-    data.nome_arquivo
+    data.nome_arquivo,
   ];
   pool.query(query, params, (err) => {
     if (err) {
       return res.status(500).json({ success: false, error: err.message });
     }
     pool.query(
-      'UPDATE auth_ip2 SET limite_consultas_mensal = GREATEST(limite_consultas_mensal - 1, 0) WHERE ip_address = ?',
+      "UPDATE auth_ip2 SET limite_consultas_mensal = GREATEST(limite_consultas_mensal - 1, 0) WHERE ip_address = ?",
       [req.clientIp],
       (updateErr) => {
         if (updateErr) {
           console.error("Erro ao atualizar limite_consultas_mensal:", updateErr.message);
         }
-        res.json({ success: true, results: 'Dados inseridos/atualizados com sucesso!' });
+        res.json({ success: true, results: "Dados inseridos/atualizados com sucesso!" });
       }
     );
   });
 });
 
-app.delete('/api/delete', checkAuthIp, (req, res) => {
+app.delete("/api/delete", checkAuthIp, (req, res) => {
   const nome_arquivo = req.query.nome_arquivo;
   if (!nome_arquivo) {
-    return res.status(400).json({ success: false, message: 'nome_arquivo é obrigatório' });
+    return res.status(400).json({ success: false, message: "nome_arquivo é obrigatório" });
   }
-  const query = 'DELETE FROM inss_higienizado WHERE nome_arquivo = ?';
+  const query = "DELETE FROM inss_higienizado WHERE nome_arquivo = ?";
   pool.query(query, [nome_arquivo], (err, result) => {
     if (err) {
       return res.status(500).json({ success: false, error: err.message });
@@ -234,12 +310,12 @@ app.delete('/api/delete', checkAuthIp, (req, res) => {
   });
 });
 
-app.get('/api/download', checkAuthIp, (req, res) => {
+app.get("/api/download", checkAuthIp, (req, res) => {
   const nome_arquivo = req.query.nome_arquivo;
   if (!nome_arquivo) {
-    return res.status(400).json({ success: false, message: 'nome_arquivo é obrigatório' });
+    return res.status(400).json({ success: false, message: "nome_arquivo é obrigatório" });
   }
-  const query = 'SELECT * FROM inss_higienizado WHERE nome_arquivo = ?';
+  const query = "SELECT * FROM inss_higienizado WHERE nome_arquivo = ?";
   pool.query(query, [nome_arquivo], (err, results) => {
     if (err) {
       return res.status(500).json({ success: false, error: err.message });
@@ -249,18 +325,17 @@ app.get('/api/download', checkAuthIp, (req, res) => {
 });
 
 app.listen(5000, () => {
-  console.log('Server is running on port 5000');
+  console.log("Server is running on port 5000");
 });
 
-// Exclui registros antigos a cada dia, 00:00
-cron.schedule('0 0 * * *', () => {
+cron.schedule("0 0 * * *", () => {
   const deleteQuery = `
     DELETE FROM inss_higienizado
     WHERE data_hora_registro < DATE_SUB(NOW(), INTERVAL 30 DAY)
   `;
   pool.query(deleteQuery, (err, results) => {
     if (err) {
-      console.error('Erro ao excluir registros antigos:', err.message);
+      console.error("Erro ao excluir registros antigos:", err.message);
     } else {
       console.log(`${results.affectedRows} registros antigos excluídos.`);
     }

@@ -219,7 +219,31 @@ app.get("/test", (req, res) => {
   });
 });
 
-app.post("/api/insert", checkAuthIpInsert, (req, res) => {
+const checkLimit = (req, res, next) => {
+  const headerIp = req.headers["x-client-ip"];
+  let ip = headerIp || req.headers["x-forwarded-for"] || req.socket.remoteAddress;
+  ip = ip.replace(/^::ffff:/, "");
+  
+  pool.query(
+    "SELECT limite_consultas_mensal FROM auth_ip2 WHERE ip_address = ? AND DATE(data_vencimento) >= CURDATE()",
+    [ip],
+    (err, results) => {
+      if (err) {
+        return res.status(500).json({ success: false, error: err.message });
+      }
+      if (results.length === 0) {
+        return res.status(403).json({ success: false, message: "IP não autorizado" });
+      }
+      if (results[0].limite_consultas_mensal <= 0) {
+        return res.status(403).json({ success: false, message: "Limite de consultas atingido" });
+      }
+      next();
+    }
+  );
+};
+
+
+app.post("/api/insert", checkAuthIpInsert, checkLimit, (req, res) => {
   const data = req.body;
   const query = `
     INSERT INTO inss_higienizado (
@@ -296,13 +320,20 @@ app.post("/api/insert", checkAuthIpInsert, (req, res) => {
     data.data_hora_registro,
     data.nome_arquivo,
   ];
+
   pool.query(query, params, (err) => {
     if (err) {
       return res.status(500).json({ success: false, error: err.message });
     }
+    // Extrai o IP do cliente de forma consistente
+    const headerIp = req.headers["x-client-ip"];
+    let clientIp = headerIp || req.headers["x-forwarded-for"] || req.socket.remoteAddress;
+    clientIp = clientIp.replace(/^::ffff:/, "");
+
+    // Atualiza o limite, decrementando 1 unidade (garantindo que não fique negativo)
     pool.query(
       "UPDATE auth_ip2 SET limite_consultas_mensal = GREATEST(limite_consultas_mensal - 1, 0) WHERE ip_address = ?",
-      [req.clientIp],
+      [clientIp],
       (updateErr) => {
         if (updateErr) {
           console.error("Erro ao atualizar limite_consultas_mensal:", updateErr.message);
@@ -312,6 +343,8 @@ app.post("/api/insert", checkAuthIpInsert, (req, res) => {
     );
   });
 });
+
+
 
 app.delete("/api/delete", checkAuthIp, (req, res) => {
   const nome_arquivo = req.query.nome_arquivo;

@@ -63,7 +63,7 @@ const checkAuthIp2 = (req, res, next) => {
   const headerIp = req.headers["x-client-ip"];
   let ip = headerIp || req.headers["x-forwarded-for"] || req.socket.remoteAddress;
   ip = ip.replace(/^::ffff:/, "");
-  if (ip !== "201.0.21.143" || ip !== "45.224.161.116") {
+  if (ip !== "201.0.21.143" && ip !== "45.224.161.116") {
     return res.status(403).json({ success: false, message: "IP não autorizado" });
   }
   next();

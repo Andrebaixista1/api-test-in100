@@ -16,7 +16,8 @@ app.use(
       "https://vieirain100-2.vercel.app",
       "https://consulta-in100-vi.vercel.app",
       "https://api-js-in100.vercel.app",
-      "https://libera-ip.vercel.app"
+      "https://libera-ip.vercel.app",
+      "https://api-in100v2.vercel.app",
     ],
     methods: ["GET", "POST", "DELETE", "OPTIONS", "PUT"],
     allowedHeaders: ["Content-Type", "Authorization", "apiKey", "x-client-ip"],

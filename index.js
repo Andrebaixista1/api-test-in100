@@ -34,7 +34,6 @@ const dbConfig = {
 
 const pool = mysql.createPool(dbConfig);
 
-// Middleware para autorizar acesso apenas a IPs cadastrados na tabela ip_data (com data_vencimento >= CURDATE())
 const checkAuthIp = (req, res, next) => {
   const headerIp = req.headers["x-client-ip"];
   let ip = headerIp || req.headers["x-forwarded-for"] || req.socket.remoteAddress;
@@ -56,10 +55,8 @@ const checkAuthIp = (req, res, next) => {
   );
 };
 
-// Usamos o mesmo middleware para inserções
 const checkAuthIpInsert = checkAuthIp;
 
-// Middleware: somente permite acesso se o IP for exatamente "26.101.42.111"
 const checkAuthIp2 = (req, res, next) => {
   const headerIp = req.headers["x-client-ip"];
   let ip = headerIp || req.headers["x-forwarded-for"] || req.socket.remoteAddress;
@@ -180,22 +177,19 @@ app.delete("/api/auth-ips/:id", checkAuthIp2, (req, res) => {
   });
 });
 
-
 app.get("/api/limit", (req, res) => {
   const headerIp = req.headers["x-client-ip"];
   let ip = headerIp || req.headers["x-forwarded-for"] || req.socket.remoteAddress;
   ip = ip.replace(/^::ffff:/, "");
   pool.query(
-    "SELECT limite_consultas FROM ip_data WHERE ip = ? AND DATE(data_vencimento) >= CURDATE()",
+    "SELECT SUM(limite_consultas) as total_limite FROM ip_data WHERE ip = ? AND DATE(data_vencimento) >= CURDATE()",
     [ip],
     (err, results) => {
       if (err) {
         return res.status(500).json({ success: false, error: err.message });
       }
-      if (results.length === 0) {
-        return res.status(200).json({ success: false, limite: 0 });
-      }
-      res.json({ success: true, limite: results[0].limite_consultas });
+      const total_limite = results[0].total_limite || 0;
+      res.json({ success: true, limite: total_limite });
     }
   );
 });
@@ -226,23 +220,20 @@ const checkLimit = (req, res, next) => {
   ip = ip.replace(/^::ffff:/, "");
   
   pool.query(
-    "SELECT limite_consultas FROM ip_data WHERE ip = ? AND DATE(data_vencimento) >= CURDATE()",
+    "SELECT SUM(limite_consultas) as total_limite FROM ip_data WHERE ip = ? AND DATE(data_vencimento) >= CURDATE()",
     [ip],
     (err, results) => {
       if (err) {
         return res.status(500).json({ success: false, error: err.message });
       }
-      if (results.length === 0) {
-        return res.status(403).json({ success: false, message: "IP não autorizado" });
-      }
-      if (results[0].limite_consultas <= 0) {
+      const total_limite = results[0].total_limite || 0;
+      if (total_limite <= 0) {
         return res.status(403).json({ success: false, message: "Limite de consultas atingido" });
       }
       next();
     }
   );
 };
-
 
 app.post("/api/insert", checkAuthIpInsert, checkLimit, (req, res) => {
   const data = req.body;
@@ -326,12 +317,9 @@ app.post("/api/insert", checkAuthIpInsert, checkLimit, (req, res) => {
     if (err) {
       return res.status(500).json({ success: false, error: err.message });
     }
-    // Extrai o IP do cliente de forma consistente
     const headerIp = req.headers["x-client-ip"];
     let clientIp = headerIp || req.headers["x-forwarded-for"] || req.socket.remoteAddress;
     clientIp = clientIp.replace(/^::ffff:/, "");
-
-    // Atualiza o limite, decrementando 1 unidade (garantindo que não fique negativo)
     pool.query(
       "UPDATE ip_data SET limite_consultas = GREATEST(limite_consultas - 1, 0) WHERE ip = ?",
       [clientIp],
@@ -344,8 +332,6 @@ app.post("/api/insert", checkAuthIpInsert, checkLimit, (req, res) => {
     );
   });
 });
-
-
 
 app.delete("/api/delete", checkAuthIp, (req, res) => {
   const nome_arquivo = req.query.nome_arquivo;

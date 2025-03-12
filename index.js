@@ -374,16 +374,16 @@ app.listen(5000, () => {
   console.log("Server is running on port 5000");
 });
 
-cron.schedule("0 0 * * *", () => {
-  const deleteQuery = `
-    DELETE FROM inss_higienizado
-    WHERE data_hora_registro < DATE_SUB(NOW(), INTERVAL 30 DAY)
-  `;
-  pool.query(deleteQuery, (err, results) => {
-    if (err) {
-      console.error("Erro ao excluir registros antigos:", err.message);
-    } else {
-      console.log(`${results.affectedRows} registros antigos excluídos.`);
-    }
-  });
-});
+// cron.schedule("0 0 * * *", () => {
+//   const deleteQuery = `
+//     DELETE FROM inss_higienizado
+//     WHERE data_hora_registro < DATE_SUB(NOW(), INTERVAL 30 DAY)
+//   `;
+//   pool.query(deleteQuery, (err, results) => {
+//     if (err) {
+//       console.error("Erro ao excluir registros antigos:", err.message);
+//     } else {
+//       console.log(`${results.affectedRows} registros antigos excluídos.`);
+//     }
+//   });
+// });

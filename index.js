@@ -33,13 +33,13 @@ const dbConfig = {
 
 const pool = mysql.createPool(dbConfig);
 
-// Middleware para autorizar acesso apenas a IPs cadastrados na tabela auth_ip2 (com data_vencimento >= CURDATE())
+// Middleware para autorizar acesso apenas a IPs cadastrados na tabela ip_data (com data_vencimento >= CURDATE())
 const checkAuthIp = (req, res, next) => {
   const headerIp = req.headers["x-client-ip"];
   let ip = headerIp || req.headers["x-forwarded-for"] || req.socket.remoteAddress;
   ip = ip.replace(/^::ffff:/, "");
   pool.query(
-    "SELECT * FROM auth_ip2 WHERE ip_address = ? AND DATE(data_vencimento) >= CURDATE()",
+    "SELECT * FROM ip_data WHERE ip = ? AND DATE(data_vencimento) >= CURDATE()",
     [ip],
     (err, results) => {
       if (err) {
@@ -75,13 +75,13 @@ app.get("/api/auth-ips", checkAuthIp2, (req, res) => {
   const query = `
     SELECT
       id,
-      ip_address,
-      description,
-      DATE_FORMAT(data_ativacao, '%d/%m/%Y %H:%i:%s') AS data_ativacao,
-      DATE_FORMAT(data_vencimento, '%d/%m/%Y %H:%i:%s') AS data_vencimento,
-      limite_consultas_mensal,
-      carregado
-    FROM auth_ip2
+      ip,
+      descricao,
+      DATE_FORMAT(data_adicao, '%d/%m/%Y %H:%i:%s') AS data_adicao,
+      DATE_FORMAT(data_vencimento, '%d/%m/%Y') AS data_vencimento,
+      limite_consultas,
+      total_carregado
+    FROM ip_data
     ORDER BY id DESC
   `;
   pool.query(query, (err, results) => {
@@ -93,26 +93,26 @@ app.get("/api/auth-ips", checkAuthIp2, (req, res) => {
 });
 
 app.post("/api/auth-ips", checkAuthIp2, (req, res) => {
-  const { ip_address, description, data_vencimento, limite_consultas_mensal } = req.body;
-  if (!ip_address || !data_vencimento || !limite_consultas_mensal) {
+  const { ip, descricao, data_vencimento, limite_consultas } = req.body;
+  if (!ip || !data_vencimento || !limite_consultas) {
     return res.status(400).json({ success: false, message: "Dados incompletos" });
   }
-  const novoLimite = parseInt(limite_consultas_mensal, 10) || 0;
-  pool.query("SELECT id, carregado FROM auth_ip2 WHERE ip_address = ?", [ip_address], (selErr, selRes) => {
+  const novoLimite = parseInt(limite_consultas, 10) || 0;
+  pool.query("SELECT id, total_carregado FROM ip_data WHERE ip = ?", [ip], (selErr, selRes) => {
     if (selErr) {
       return res.status(500).json({ success: false, error: selErr.message });
     }
     if (selRes.length > 0) {
-      const oldCarregado = selRes[0].carregado || 0;
-      const somaCarregado = oldCarregado + novoLimite;
+      const oldtotal_carregado = selRes[0].total_carregado || 0;
+      const somatotal_carregado = oldtotal_carregado + novoLimite;
       const updateQuery = `
-        UPDATE auth_ip2
-        SET description = ?, data_vencimento = ?, limite_consultas_mensal = ?, carregado = ?
+        UPDATE ip_data
+        SET descricao = ?, data_vencimento = ?, limite_consultas = ?, total_carregado = ?
         WHERE id = ?
       `;
       pool.query(
         updateQuery,
-        [description, data_vencimento, novoLimite, somaCarregado, selRes[0].id],
+        [descricao, data_vencimento, novoLimite, somatotal_carregado, selRes[0].id],
         (upErr) => {
           if (upErr) {
             return res.status(500).json({ success: false, error: upErr.message });
@@ -122,12 +122,12 @@ app.post("/api/auth-ips", checkAuthIp2, (req, res) => {
       );
     } else {
       const insertQuery = `
-        INSERT INTO auth_ip2
-          (ip_address, description, data_ativacao, data_vencimento, limite_consultas_mensal, carregado)
+        INSERT INTO ip_data
+          (ip, descricao, data_adicao, data_vencimento, limite_consultas, total_carregado)
         VALUES
           (?, ?, NOW(), ?, ?, ?)
       `;
-      pool.query(insertQuery, [ip_address, description, data_vencimento, novoLimite, novoLimite], (inErr, inRes) => {
+      pool.query(insertQuery, [ip, descricao, data_vencimento, novoLimite, novoLimite], (inErr, inRes) => {
         if (inErr) {
           return res.status(500).json({ success: false, error: inErr.message });
         }
@@ -139,23 +139,23 @@ app.post("/api/auth-ips", checkAuthIp2, (req, res) => {
 
 app.put("/api/auth-ips/:id", checkAuthIp2, (req, res) => {
   const { id } = req.params;
-  const { ip_address, description, data_vencimento, limite_consultas_mensal } = req.body;
-  const novoLimite = parseInt(limite_consultas_mensal, 10) || 0;
-  pool.query("SELECT carregado FROM auth_ip2 WHERE id = ?", [id], (selErr, selRes) => {
+  const { ip, descricao, data_vencimento, limite_consultas } = req.body;
+  const novoLimite = parseInt(limite_consultas, 10) || 0;
+  pool.query("SELECT total_carregado FROM ip_data WHERE id = ?", [id], (selErr, selRes) => {
     if (selErr) {
       return res.status(500).json({ success: false, error: selErr.message });
     }
     if (!selRes.length) {
       return res.status(404).json({ success: false, message: "Registro não encontrado." });
     }
-    const oldCarregado = selRes[0].carregado || 0;
-    const somaCarregado = oldCarregado + novoLimite;
+    const oldtotal_carregado = selRes[0].total_carregado || 0;
+    const somatotal_carregado = oldtotal_carregado + novoLimite;
     const query = `
-      UPDATE auth_ip2
-      SET ip_address = ?, description = ?, data_vencimento = ?, limite_consultas_mensal = ?, carregado = ?
+      UPDATE ip_data
+      SET ip = ?, descricao = ?, data_vencimento = ?, limite_consultas = ?, total_carregado = ?
       WHERE id = ?
     `;
-    const params = [ip_address, description, data_vencimento, novoLimite, somaCarregado, id];
+    const params = [ip, descricao, data_vencimento, novoLimite, somatotal_carregado, id];
     pool.query(query, params, (err) => {
       if (err) {
         return res.status(500).json({ success: false, error: err.message });
@@ -167,7 +167,7 @@ app.put("/api/auth-ips/:id", checkAuthIp2, (req, res) => {
 
 app.delete("/api/auth-ips/:id", checkAuthIp2, (req, res) => {
   const { id } = req.params;
-  const query = "DELETE FROM auth_ip2 WHERE id = ?";
+  const query = "DELETE FROM ip_data WHERE id = ?";
   pool.query(query, [id], (err, result) => {
     if (err) {
       return res.status(500).json({ success: false, error: err.message });
@@ -185,7 +185,7 @@ app.get("/api/limit", (req, res) => {
   let ip = headerIp || req.headers["x-forwarded-for"] || req.socket.remoteAddress;
   ip = ip.replace(/^::ffff:/, "");
   pool.query(
-    "SELECT limite_consultas_mensal FROM auth_ip2 WHERE ip_address = ? AND DATE(data_vencimento) >= CURDATE()",
+    "SELECT limite_consultas FROM ip_data WHERE ip = ? AND DATE(data_vencimento) >= CURDATE()",
     [ip],
     (err, results) => {
       if (err) {
@@ -194,7 +194,7 @@ app.get("/api/limit", (req, res) => {
       if (results.length === 0) {
         return res.status(200).json({ success: false, limite: 0 });
       }
-      res.json({ success: true, limite: results[0].limite_consultas_mensal });
+      res.json({ success: true, limite: results[0].limite_consultas });
     }
   );
 });
@@ -225,7 +225,7 @@ const checkLimit = (req, res, next) => {
   ip = ip.replace(/^::ffff:/, "");
   
   pool.query(
-    "SELECT limite_consultas_mensal FROM auth_ip2 WHERE ip_address = ? AND DATE(data_vencimento) >= CURDATE()",
+    "SELECT limite_consultas FROM ip_data WHERE ip = ? AND DATE(data_vencimento) >= CURDATE()",
     [ip],
     (err, results) => {
       if (err) {
@@ -234,7 +234,7 @@ const checkLimit = (req, res, next) => {
       if (results.length === 0) {
         return res.status(403).json({ success: false, message: "IP não autorizado" });
       }
-      if (results[0].limite_consultas_mensal <= 0) {
+      if (results[0].limite_consultas <= 0) {
         return res.status(403).json({ success: false, message: "Limite de consultas atingido" });
       }
       next();
@@ -332,11 +332,11 @@ app.post("/api/insert", checkAuthIpInsert, checkLimit, (req, res) => {
 
     // Atualiza o limite, decrementando 1 unidade (garantindo que não fique negativo)
     pool.query(
-      "UPDATE auth_ip2 SET limite_consultas_mensal = GREATEST(limite_consultas_mensal - 1, 0) WHERE ip_address = ?",
+      "UPDATE ip_data SET limite_consultas = GREATEST(limite_consultas - 1, 0) WHERE ip = ?",
       [clientIp],
       (updateErr) => {
         if (updateErr) {
-          console.error("Erro ao atualizar limite_consultas_mensal:", updateErr.message);
+          console.error("Erro ao atualizar limite_consultas:", updateErr.message);
         }
         res.json({ success: true, results: "Dados inseridos/atualizados com sucesso!" });
       }

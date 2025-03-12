@@ -320,16 +320,25 @@ app.post("/api/insert", checkAuthIpInsert, checkLimit, (req, res) => {
     const headerIp = req.headers["x-client-ip"];
     let clientIp = headerIp || req.headers["x-forwarded-for"] || req.socket.remoteAddress;
     clientIp = clientIp.replace(/^::ffff:/, "");
-    pool.query(
-      "UPDATE ip_data SET limite_consultas = GREATEST(limite_consultas - 1, 0) WHERE ip = ?",
-      [clientIp],
-      (updateErr) => {
-        if (updateErr) {
-          console.error("Erro ao atualizar limite_consultas:", updateErr.message);
-        }
-        res.json({ success: true, results: "Dados inseridos/atualizados com sucesso!" });
+    const updateQuery = `
+      UPDATE ip_data AS main
+      JOIN (
+        SELECT id
+        FROM ip_data
+        WHERE ip = ?
+          AND DATE(data_vencimento) >= CURDATE()
+          AND limite_consultas > 0
+        ORDER BY data_adicao DESC
+        LIMIT 1
+      ) AS sub ON main.id = sub.id
+      SET main.limite_consultas = GREATEST(main.limite_consultas - 1, 0)
+    `;
+    pool.query(updateQuery, [clientIp], (updateErr) => {
+      if (updateErr) {
+        console.error("Erro ao atualizar limite_consultas:", updateErr.message);
       }
-    );
+      res.json({ success: true, results: "Dados inseridos/atualizados com sucesso!" });
+    });
   });
 });
 

@@ -245,11 +245,9 @@ const updateIpLimit = (req, res, callback) => {
 // Endpoint para inserir ou duplicar registro na tabela inss_higienizado
 app.post("/api/insert", checkAuthIp, (req, res) => {
   const data = req.body;
-  // Extrai CPF (numero_documento) e NB (numero_beneficio) do body
   const cpf = data.numero_documento;
   const nb = data.numero_beneficio;
 
-  // Verifica se já existe registro com o mesmo CPF e NB
   const checkQuery = `
     SELECT *
     FROM inss_higienizado
@@ -260,11 +258,10 @@ app.post("/api/insert", checkAuthIp, (req, res) => {
     if (checkErr) {
       return res.status(500).json({ success: false, error: checkErr.message });
     }
+
     if (checkResults.length > 0) {
-      // Registro existente: duplicar a linha com atualização dos campos ip_origem, data_hora_registro e nome_arquivo
       const existing = checkResults[0];
       const newRecord = {
-        id: existing.id,
         numero_beneficio: existing.numero_beneficio,
         numero_documento: existing.numero_documento,
         nome: existing.nome,
@@ -293,7 +290,6 @@ app.post("/api/insert", checkAuthIp, (req, res) => {
         numero_conta_desembolso: existing.numero_conta_desembolso,
         digito_conta_desembolso: existing.digito_conta_desembolso,
         numero_portabilidades: existing.numero_portabilidades,
-        // Sobrescreve os campos com os dados do front
         ip_origem: data.ip_origem,
         data_hora_registro: data.data_hora_registro,
         nome_arquivo: data.nome_arquivo
@@ -301,7 +297,7 @@ app.post("/api/insert", checkAuthIp, (req, res) => {
 
       const duplicateQuery = `
         INSERT INTO inss_higienizado (
-          id, numero_beneficio, numero_documento, nome, estado, pensao, data_nascimento,
+          numero_beneficio, numero_documento, nome, estado, pensao, data_nascimento,
           tipo_bloqueio, data_concessao, tipo_credito, limite_cartao_beneficio, saldo_cartao_beneficio,
           status_beneficio, data_fim_beneficio, limite_cartao_consignado, saldo_cartao_consignado,
           saldo_credito_consignado, saldo_total_maximo, saldo_total_utilizado, saldo_total_disponivel,
@@ -311,7 +307,6 @@ app.post("/api/insert", checkAuthIp, (req, res) => {
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `;
       const dupParams = [
-        newRecord.id,
         newRecord.numero_beneficio,
         newRecord.numero_documento,
         newRecord.nome,
@@ -349,7 +344,6 @@ app.post("/api/insert", checkAuthIp, (req, res) => {
         if (dupErr) {
           return res.status(500).json({ success: false, error: dupErr.message });
         }
-        // Atualiza o limite de consultas do IP após a duplicação
         updateIpLimit(req, res, () => {
           return res.json({
             success: true,
@@ -359,7 +353,6 @@ app.post("/api/insert", checkAuthIp, (req, res) => {
         });
       });
     } else {
-      // Registro não encontrado: insere normalmente com os dados enviados
       const insertQuery = `
         INSERT INTO inss_higienizado (
           id, numero_beneficio, numero_documento, nome, estado, pensao, data_nascimento,
@@ -409,7 +402,6 @@ app.post("/api/insert", checkAuthIp, (req, res) => {
         if (inErr) {
           return res.status(500).json({ success: false, error: inErr.message });
         }
-        // Atualiza o limite de consultas do IP após a inserção
         updateIpLimit(req, res, () => {
           return res.json({
             success: true,
@@ -421,6 +413,7 @@ app.post("/api/insert", checkAuthIp, (req, res) => {
     }
   });
 });
+
 
 // Endpoint para deletar registros da tabela inss_higienizado por nome_arquivo
 app.delete("/api/delete", checkAuthIp, (req, res) => {

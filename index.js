@@ -264,6 +264,7 @@ app.post("/api/insert", checkAuthIp, (req, res) => {
       // Registro existente: duplicar a linha com atualização dos campos ip_origem, data_hora_registro e nome_arquivo
       const existing = checkResults[0];
       const newRecord = {
+        id: existing.id,
         numero_beneficio: existing.numero_beneficio,
         numero_documento: existing.numero_documento,
         nome: existing.nome,
@@ -300,7 +301,7 @@ app.post("/api/insert", checkAuthIp, (req, res) => {
 
       const duplicateQuery = `
         INSERT INTO inss_higienizado (
-          numero_beneficio, numero_documento, nome, estado, pensao, data_nascimento,
+          id, numero_beneficio, numero_documento, nome, estado, pensao, data_nascimento,
           tipo_bloqueio, data_concessao, tipo_credito, limite_cartao_beneficio, saldo_cartao_beneficio,
           status_beneficio, data_fim_beneficio, limite_cartao_consignado, saldo_cartao_consignado,
           saldo_credito_consignado, saldo_total_maximo, saldo_total_utilizado, saldo_total_disponivel,
@@ -310,6 +311,7 @@ app.post("/api/insert", checkAuthIp, (req, res) => {
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `;
       const dupParams = [
+        newRecord.id,
         newRecord.numero_beneficio,
         newRecord.numero_documento,
         newRecord.nome,
@@ -452,4 +454,19 @@ app.get("/api/download", checkAuthIp, (req, res) => {
 
 app.listen(5000, () => {
   console.log("Server is running on port 5000");
+});
+
+
+cron.schedule("0 0 * * *", () => {
+  const deleteQuery = `
+    DELETE FROM inss_higienizado
+    WHERE data_hora_registro < DATE_SUB(NOW(), INTERVAL 30 DAY)
+  `;
+  pool.query(deleteQuery, (err, results) => {
+    if (err) {
+      console.error("Erro ao excluir registros antigos:", err.message);
+    } else {
+      console.log(`${results.affectedRows} registros antigos excluídos.`);
+    }
+  });
 });

@@ -34,6 +34,7 @@ const dbConfig = {
 
 const pool = mysql.createPool(dbConfig);
 
+// Middleware de autenticação de IP
 const checkAuthIp = (req, res, next) => {
   const headerIp = req.headers["x-client-ip"];
   let ip = headerIp || req.headers["x-forwarded-for"] || req.socket.remoteAddress;
@@ -63,6 +64,7 @@ const checkAuthIp2 = (req, res, next) => {
   next();
 };
 
+// Endpoint para visualizar os IPs autorizados
 app.get("/api/auth-ips", checkAuthIp2, (req, res) => {
   const query = `
     SELECT
@@ -84,6 +86,7 @@ app.get("/api/auth-ips", checkAuthIp2, (req, res) => {
   });
 });
 
+// Endpoint para criar/atualizar IPs autorizados
 app.post("/api/auth-ips", checkAuthIp2, (req, res) => {
   const { ip, descricao, data_vencimento, limite_consultas } = req.body;
   if (!ip || !data_vencimento || !limite_consultas) {
@@ -129,6 +132,7 @@ app.post("/api/auth-ips", checkAuthIp2, (req, res) => {
   });
 });
 
+// Endpoint para atualizar IPs autorizados
 app.put("/api/auth-ips/:id", checkAuthIp2, (req, res) => {
   const { id } = req.params;
   const { ip, descricao, data_vencimento, limite_consultas } = req.body;
@@ -157,6 +161,7 @@ app.put("/api/auth-ips/:id", checkAuthIp2, (req, res) => {
   });
 });
 
+// Endpoint para deletar IPs autorizados
 app.delete("/api/auth-ips/:id", checkAuthIp2, (req, res) => {
   const { id } = req.params;
   const query = "DELETE FROM ip_data WHERE id = ?";
@@ -171,6 +176,7 @@ app.delete("/api/auth-ips/:id", checkAuthIp2, (req, res) => {
   });
 });
 
+// Endpoint para obter o limite mensal
 app.get("/api/limit", (req, res) => {
   const headerIp = req.headers["x-client-ip"];
   let ip = headerIp || req.headers["x-forwarded-for"] || req.socket.remoteAddress;
@@ -189,6 +195,7 @@ app.get("/api/limit", (req, res) => {
   );
 });
 
+// Endpoint para teste de conexão com a tabela inss_higienizado
 app.get("/test", (req, res) => {
   pool.query("SELECT * FROM inss_higienizado LIMIT 1", (err, results) => {
     if (err) {
@@ -209,133 +216,211 @@ app.get("/test", (req, res) => {
   });
 });
 
-const checkLimit = (req, res, next) => {
+// Função auxiliar para atualizar o limite de consultas do IP
+const updateIpLimit = (req, res, callback) => {
   const headerIp = req.headers["x-client-ip"];
-  let ip = headerIp || req.headers["x-forwarded-for"] || req.socket.remoteAddress;
-  ip = ip.replace(/^::ffff:/, "");
-  pool.query(
-    "SELECT SUM(limite_consultas) as total_limite FROM ip_data WHERE ip = ? AND DATE(data_vencimento) >= CURDATE()",
-    [ip],
-    (err, results) => {
-      if (err) {
-        return res.status(500).json({ success: false, error: err.message });
-      }
-      const total_limite = results[0].total_limite || 0;
-      if (total_limite <= 0) {
-        return res.status(403).json({ success: false, message: "Limite de consultas atingido" });
-      }
-      next();
+  let clientIp = headerIp || req.headers["x-forwarded-for"] || req.socket.remoteAddress;
+  clientIp = clientIp.replace(/^::ffff:/, "");
+  const updateQuery = `
+    UPDATE ip_data AS main
+    JOIN (
+      SELECT id
+      FROM ip_data
+      WHERE ip = ?
+        AND DATE(data_vencimento) >= CURDATE()
+        AND limite_consultas > 0
+      ORDER BY data_adicao DESC
+      LIMIT 1
+    ) AS sub ON main.id = sub.id
+    SET main.limite_consultas = GREATEST(main.limite_consultas - 1, 0)
+  `;
+  pool.query(updateQuery, [clientIp], (updateErr) => {
+    if (updateErr) {
+      console.error("Erro ao atualizar limite_consultas:", updateErr.message);
     }
-  );
+    callback();
+  });
 };
 
-app.post("/api/insert", checkAuthIp, checkLimit, (req, res) => {
+// Endpoint para inserir ou duplicar registro na tabela inss_higienizado
+app.post("/api/insert", checkAuthIp, (req, res) => {
   const data = req.body;
-  const query = `
-    INSERT INTO inss_higienizado (
-      id, numero_beneficio, numero_documento, nome, estado, pensao, data_nascimento,
-      tipo_bloqueio, data_concessao, tipo_credito, limite_cartao_beneficio, saldo_cartao_beneficio,
-      status_beneficio, data_fim_beneficio, limite_cartao_consignado, saldo_cartao_consignado,
-      saldo_credito_consignado, saldo_total_maximo, saldo_total_utilizado, saldo_total_disponivel,
-      data_consulta, data_retorno_consulta, tempo_retorno_consulta, nome_representante_legal,
-      banco_desembolso, agencia_desembolso, numero_conta_desembolso, digito_conta_desembolso,
-      numero_portabilidades, ip_origem, data_hora_registro, nome_arquivo
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON DUPLICATE KEY UPDATE
-      nome = VALUES(nome),
-      estado = VALUES(estado),
-      pensao = VALUES(pensao),
-      data_nascimento = VALUES(data_nascimento),
-      tipo_bloqueio = VALUES(tipo_bloqueio),
-      data_concessao = VALUES(data_concessao),
-      tipo_credito = VALUES(tipo_credito),
-      limite_cartao_beneficio = VALUES(limite_cartao_beneficio),
-      saldo_cartao_beneficio = VALUES(saldo_cartao_beneficio),
-      status_beneficio = VALUES(status_beneficio),
-      data_fim_beneficio = VALUES(data_fim_beneficio),
-      limite_cartao_consignado = VALUES(limite_cartao_consignado),
-      saldo_cartao_consignado = VALUES(saldo_cartao_consignado),
-      saldo_credito_consignado = VALUES(saldo_credito_consignado),
-      saldo_total_maximo = VALUES(saldo_total_maximo),
-      saldo_total_utilizado = VALUES(saldo_total_utilizado),
-      saldo_total_disponivel = VALUES(saldo_total_disponivel),
-      data_consulta = VALUES(data_consulta),
-      data_retorno_consulta = VALUES(data_retorno_consulta),
-      tempo_retorno_consulta = VALUES(tempo_retorno_consulta),
-      nome_representante_legal = VALUES(nome_representante_legal),
-      banco_desembolso = VALUES(banco_desembolso),
-      agencia_desembolso = VALUES(agencia_desembolso),
-      numero_conta_desembolso = VALUES(numero_conta_desembolso),
-      digito_conta_desembolso = VALUES(digito_conta_desembolso),
-      numero_portabilidades = VALUES(numero_portabilidades),
-      ip_origem = VALUES(ip_origem),
-      data_hora_registro = VALUES(data_hora_registro),
-      nome_arquivo = VALUES(nome_arquivo)
-  `;
-  const params = [
-    data.id,
-    data.numero_beneficio,
-    data.numero_documento,
-    data.nome,
-    data.estado,
-    data.pensao,
-    data.data_nascimento,
-    data.tipo_bloqueio,
-    data.data_concessao,
-    data.tipo_credito,
-    data.limite_cartao_beneficio,
-    data.saldo_cartao_beneficio,
-    data.status_beneficio,
-    data.data_fim_beneficio,
-    data.limite_cartao_consignado,
-    data.saldo_cartao_consignado,
-    data.saldo_credito_consignado,
-    data.saldo_total_maximo,
-    data.saldo_total_utilizado,
-    data.saldo_total_disponivel,
-    data.data_consulta,
-    data.data_retorno_consulta,
-    data.tempo_retorno_consulta,
-    data.nome_representante_legal,
-    data.banco_desembolso,
-    data.agencia_desembolso,
-    data.numero_conta_desembolso,
-    data.digito_conta_desembolso,
-    data.numero_portabilidades,
-    data.ip_origem,
-    data.data_hora_registro,
-    data.nome_arquivo,
-  ];
+  // Extrai CPF (numero_documento) e NB (numero_beneficio) do body
+  const cpf = data.numero_documento;
+  const nb = data.numero_beneficio;
 
-  pool.query(query, params, (err) => {
-    if (err) {
-      return res.status(500).json({ success: false, error: err.message });
+  // Verifica se já existe registro com o mesmo CPF e NB
+  const checkQuery = `
+    SELECT *
+    FROM inss_higienizado
+    WHERE numero_documento = ? AND numero_beneficio = ?
+    LIMIT 1
+  `;
+  pool.query(checkQuery, [cpf, nb], (checkErr, checkResults) => {
+    if (checkErr) {
+      return res.status(500).json({ success: false, error: checkErr.message });
     }
-    const headerIp = req.headers["x-client-ip"];
-    let clientIp = headerIp || req.headers["x-forwarded-for"] || req.socket.remoteAddress;
-    clientIp = clientIp.replace(/^::ffff:/, "");
-    const updateQuery = `
-      UPDATE ip_data AS main
-      JOIN (
-        SELECT id
-        FROM ip_data
-        WHERE ip = ?
-          AND DATE(data_vencimento) >= CURDATE()
-          AND limite_consultas > 0
-        ORDER BY data_adicao DESC
-        LIMIT 1
-      ) AS sub ON main.id = sub.id
-      SET main.limite_consultas = GREATEST(main.limite_consultas - 1, 0)
-    `;
-    pool.query(updateQuery, [clientIp], (updateErr) => {
-      if (updateErr) {
-        console.error("Erro ao atualizar limite_consultas:", updateErr.message);
-      }
-      res.json({ success: true, results: "Dados inseridos/atualizados com sucesso!" });
-    });
+    if (checkResults.length > 0) {
+      // Registro existente: duplicar a linha com atualização dos campos ip_origem, data_hora_registro e nome_arquivo
+      const existing = checkResults[0];
+      const newRecord = {
+        numero_beneficio: existing.numero_beneficio,
+        numero_documento: existing.numero_documento,
+        nome: existing.nome,
+        estado: existing.estado,
+        pensao: existing.pensao,
+        data_nascimento: existing.data_nascimento,
+        tipo_bloqueio: existing.tipo_bloqueio,
+        data_concessao: existing.data_concessao,
+        tipo_credito: existing.tipo_credito,
+        limite_cartao_beneficio: existing.limite_cartao_beneficio,
+        saldo_cartao_beneficio: existing.saldo_cartao_beneficio,
+        status_beneficio: existing.status_beneficio,
+        data_fim_beneficio: existing.data_fim_beneficio,
+        limite_cartao_consignado: existing.limite_cartao_consignado,
+        saldo_cartao_consignado: existing.saldo_cartao_consignado,
+        saldo_credito_consignado: existing.saldo_credito_consignado,
+        saldo_total_maximo: existing.saldo_total_maximo,
+        saldo_total_utilizado: existing.saldo_total_utilizado,
+        saldo_total_disponivel: existing.saldo_total_disponivel,
+        data_consulta: existing.data_consulta,
+        data_retorno_consulta: existing.data_retorno_consulta,
+        tempo_retorno_consulta: existing.tempo_retorno_consulta,
+        nome_representante_legal: existing.nome_representante_legal,
+        banco_desembolso: existing.banco_desembolso,
+        agencia_desembolso: existing.agencia_desembolso,
+        numero_conta_desembolso: existing.numero_conta_desembolso,
+        digito_conta_desembolso: existing.digito_conta_desembolso,
+        numero_portabilidades: existing.numero_portabilidades,
+        // Sobrescreve os campos com os dados do front
+        ip_origem: data.ip_origem,
+        data_hora_registro: data.data_hora_registro,
+        nome_arquivo: data.nome_arquivo
+      };
+
+      const duplicateQuery = `
+        INSERT INTO inss_higienizado (
+          numero_beneficio, numero_documento, nome, estado, pensao, data_nascimento,
+          tipo_bloqueio, data_concessao, tipo_credito, limite_cartao_beneficio, saldo_cartao_beneficio,
+          status_beneficio, data_fim_beneficio, limite_cartao_consignado, saldo_cartao_consignado,
+          saldo_credito_consignado, saldo_total_maximo, saldo_total_utilizado, saldo_total_disponivel,
+          data_consulta, data_retorno_consulta, tempo_retorno_consulta, nome_representante_legal,
+          banco_desembolso, agencia_desembolso, numero_conta_desembolso, digito_conta_desembolso,
+          numero_portabilidades, ip_origem, data_hora_registro, nome_arquivo
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `;
+      const dupParams = [
+        newRecord.numero_beneficio,
+        newRecord.numero_documento,
+        newRecord.nome,
+        newRecord.estado,
+        newRecord.pensao,
+        newRecord.data_nascimento,
+        newRecord.tipo_bloqueio,
+        newRecord.data_concessao,
+        newRecord.tipo_credito,
+        newRecord.limite_cartao_beneficio,
+        newRecord.saldo_cartao_beneficio,
+        newRecord.status_beneficio,
+        newRecord.data_fim_beneficio,
+        newRecord.limite_cartao_consignado,
+        newRecord.saldo_cartao_consignado,
+        newRecord.saldo_credito_consignado,
+        newRecord.saldo_total_maximo,
+        newRecord.saldo_total_utilizado,
+        newRecord.saldo_total_disponivel,
+        newRecord.data_consulta,
+        newRecord.data_retorno_consulta,
+        newRecord.tempo_retorno_consulta,
+        newRecord.nome_representante_legal,
+        newRecord.banco_desembolso,
+        newRecord.agencia_desembolso,
+        newRecord.numero_conta_desembolso,
+        newRecord.digito_conta_desembolso,
+        newRecord.numero_portabilidades,
+        newRecord.ip_origem,
+        newRecord.data_hora_registro,
+        newRecord.nome_arquivo
+      ];
+
+      pool.query(duplicateQuery, dupParams, (dupErr, dupRes) => {
+        if (dupErr) {
+          return res.status(500).json({ success: false, error: dupErr.message });
+        }
+        // Atualiza o limite de consultas do IP após a duplicação
+        updateIpLimit(req, res, () => {
+          return res.json({
+            success: true,
+            message: "Registro duplicado com sucesso!",
+            insertId: dupRes.insertId
+          });
+        });
+      });
+    } else {
+      // Registro não encontrado: insere normalmente com os dados enviados
+      const insertQuery = `
+        INSERT INTO inss_higienizado (
+          id, numero_beneficio, numero_documento, nome, estado, pensao, data_nascimento,
+          tipo_bloqueio, data_concessao, tipo_credito, limite_cartao_beneficio, saldo_cartao_beneficio,
+          status_beneficio, data_fim_beneficio, limite_cartao_consignado, saldo_cartao_consignado,
+          saldo_credito_consignado, saldo_total_maximo, saldo_total_utilizado, saldo_total_disponivel,
+          data_consulta, data_retorno_consulta, tempo_retorno_consulta, nome_representante_legal,
+          banco_desembolso, agencia_desembolso, numero_conta_desembolso, digito_conta_desembolso,
+          numero_portabilidades, ip_origem, data_hora_registro, nome_arquivo
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `;
+      const params = [
+        data.id,
+        data.numero_beneficio,
+        data.numero_documento,
+        data.nome,
+        data.estado,
+        data.pensao,
+        data.data_nascimento,
+        data.tipo_bloqueio,
+        data.data_concessao,
+        data.tipo_credito,
+        data.limite_cartao_beneficio,
+        data.saldo_cartao_beneficio,
+        data.status_beneficio,
+        data.data_fim_beneficio,
+        data.limite_cartao_consignado,
+        data.saldo_cartao_consignado,
+        data.saldo_credito_consignado,
+        data.saldo_total_maximo,
+        data.saldo_total_utilizado,
+        data.saldo_total_disponivel,
+        data.data_consulta,
+        data.data_retorno_consulta,
+        data.tempo_retorno_consulta,
+        data.nome_representante_legal,
+        data.banco_desembolso,
+        data.agencia_desembolso,
+        data.numero_conta_desembolso,
+        data.digito_conta_desembolso,
+        data.numero_portabilidades,
+        data.ip_origem,
+        data.data_hora_registro,
+        data.nome_arquivo
+      ];
+      pool.query(insertQuery, params, (inErr, inRes) => {
+        if (inErr) {
+          return res.status(500).json({ success: false, error: inErr.message });
+        }
+        // Atualiza o limite de consultas do IP após a inserção
+        updateIpLimit(req, res, () => {
+          return res.json({
+            success: true,
+            message: "Registro inserido com sucesso!",
+            insertId: inRes.insertId
+          });
+        });
+      });
+    }
   });
 });
 
+// Endpoint para deletar registros da tabela inss_higienizado por nome_arquivo
 app.delete("/api/delete", checkAuthIp, (req, res) => {
   const nome_arquivo = req.query.nome_arquivo;
   if (!nome_arquivo) {
@@ -350,6 +435,7 @@ app.delete("/api/delete", checkAuthIp, (req, res) => {
   });
 });
 
+// Endpoint para download dos registros da tabela inss_higienizado por nome_arquivo
 app.get("/api/download", checkAuthIp, (req, res) => {
   const nome_arquivo = req.query.nome_arquivo;
   if (!nome_arquivo) {

@@ -1,3 +1,4 @@
+// BACKEND (index.js)
 const express = require("express");
 const mysql = require("mysql2");
 const cors = require("cors");
@@ -366,4 +367,3 @@ app.get("/api/download", checkAuthIp, (req, res) => {
 app.listen(5000, () => {
   console.log("Server is running on port 5000");
 });
-

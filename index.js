@@ -1,4 +1,3 @@
-// BACKEND (index.js)
 const express = require("express");
 const mysql = require("mysql2");
 const cors = require("cors");
@@ -46,16 +45,12 @@ const checkAuthIp = (req, res, next) => {
         return res.status(500).json({ success: false, error: err.message });
       }
       if (results.length === 0) {
-        return res
-          .status(403)
-          .json({ success: false, message: "IP não autorizado" });
+        return res.status(403).json({ success: false, message: "IP não autorizado" });
       }
       next();
     }
   );
 };
-
-const checkAuthIpInsert = checkAuthIp;
 
 const checkAuthIp2 = (req, res, next) => {
   const headerIp = req.headers["x-client-ip"];
@@ -66,8 +61,6 @@ const checkAuthIp2 = (req, res, next) => {
   }
   next();
 };
-
-const checkAuthIpInsert2 = checkAuthIp2;
 
 app.get("/api/auth-ips", checkAuthIp2, (req, res) => {
   const query = `
@@ -181,6 +174,7 @@ app.get("/api/limit", (req, res) => {
   const headerIp = req.headers["x-client-ip"];
   let ip = headerIp || req.headers["x-forwarded-for"] || req.socket.remoteAddress;
   ip = ip.replace(/^::ffff:/, "");
+  console.log("IP detectado em /api/limit:", ip);
   pool.query(
     "SELECT SUM(limite_consultas) as total_limite FROM ip_data WHERE ip = ? AND DATE(data_vencimento) >= CURDATE()",
     [ip],
@@ -218,7 +212,6 @@ const checkLimit = (req, res, next) => {
   const headerIp = req.headers["x-client-ip"];
   let ip = headerIp || req.headers["x-forwarded-for"] || req.socket.remoteAddress;
   ip = ip.replace(/^::ffff:/, "");
-  
   pool.query(
     "SELECT SUM(limite_consultas) as total_limite FROM ip_data WHERE ip = ? AND DATE(data_vencimento) >= CURDATE()",
     [ip],
@@ -235,7 +228,7 @@ const checkLimit = (req, res, next) => {
   );
 };
 
-app.post("/api/insert", checkAuthIpInsert, checkLimit, (req, res) => {
+app.post("/api/insert", checkAuthIp, checkLimit, (req, res) => {
   const data = req.body;
   const query = `
     INSERT INTO inss_higienizado (
@@ -374,16 +367,3 @@ app.listen(5000, () => {
   console.log("Server is running on port 5000");
 });
 
-// cron.schedule("0 0 * * *", () => {
-//   const deleteQuery = `
-//     DELETE FROM inss_higienizado
-//     WHERE data_hora_registro < DATE_SUB(NOW(), INTERVAL 30 DAY)
-//   `;
-//   pool.query(deleteQuery, (err, results) => {
-//     if (err) {
-//       console.error("Erro ao excluir registros antigos:", err.message);
-//     } else {
-//       console.log(`${results.affectedRows} registros antigos excluídos.`);
-//     }
-//   });
-// });

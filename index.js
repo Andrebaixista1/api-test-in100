@@ -243,6 +243,7 @@ const updateIpLimit = (req, res, callback) => {
 };
 
 // Endpoint para inserir ou duplicar registro na tabela inss_higienizado
+// Endpoint para inserir ou duplicar registro na tabela inss_higienizado
 app.post("/api/insert", checkAuthIp, (req, res) => {
   const data = req.body;
   const cpf = data.numero_documento;
@@ -258,8 +259,9 @@ app.post("/api/insert", checkAuthIp, (req, res) => {
     if (checkErr) {
       return res.status(500).json({ success: false, error: checkErr.message });
     }
+
     if (checkResults.length > 0) {
-      // Se já existir, duplicar usando os dados já salvos (exceto os campos a serem atualizados)
+      // Registro encontrado: duplicar usando os dados já salvos e atualizando os campos recebidos
       const existing = checkResults[0];
       const newRecord = {
         numero_beneficio: existing.numero_beneficio,
@@ -294,6 +296,7 @@ app.post("/api/insert", checkAuthIp, (req, res) => {
         data_hora_registro: data.data_hora_registro,
         nome_arquivo: data.nome_arquivo
       };
+
       const duplicateQuery = `
         INSERT INTO inss_higienizado (
           numero_beneficio, numero_documento, nome, estado, pensao, data_nascimento,
@@ -338,6 +341,7 @@ app.post("/api/insert", checkAuthIp, (req, res) => {
         newRecord.data_hora_registro,
         newRecord.nome_arquivo
       ];
+
       pool.query(duplicateQuery, dupParams, (dupErr, dupRes) => {
         if (dupErr) {
           return res.status(500).json({ success: false, error: dupErr.message });
@@ -351,7 +355,7 @@ app.post("/api/insert", checkAuthIp, (req, res) => {
         });
       });
     } else {
-      // Se não encontrar, chama a API externa para obter os dados e inserir
+      // Registro não encontrado: chama a API externa para obter os dados e inserir
       fetch("https://api.ajin.io/v3/query-inss-balances/finder/await", {
         method: "POST",
         headers: {
@@ -365,69 +369,69 @@ app.post("/api/insert", checkAuthIp, (req, res) => {
           attempts: 60
         })
       })
-      .then(response => response.json())
-      .then(apiData => {
-        const insertQuery = `
-          INSERT INTO inss_higienizado (
-            id, numero_beneficio, numero_documento, nome, estado, pensao, data_nascimento,
-            tipo_bloqueio, data_concessao, tipo_credito, limite_cartao_beneficio, saldo_cartao_beneficio,
-            status_beneficio, data_fim_beneficio, limite_cartao_consignado, saldo_cartao_consignado,
-            saldo_credito_consignado, saldo_total_maximo, saldo_total_utilizado, saldo_total_disponivel,
-            data_consulta, data_retorno_consulta, tempo_retorno_consulta, nome_representante_legal,
-            banco_desembolso, agencia_desembolso, numero_conta_desembolso, digito_conta_desembolso,
-            numero_portabilidades, ip_origem, data_hora_registro, nome_arquivo
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `;
-        const params = [
-          apiData.id,
-          apiData.benefitNumber,
-          apiData.documentNumber,
-          apiData.name,
-          apiData.state,
-          apiData.alimony,
-          apiData.birthDate,
-          apiData.blockType,
-          apiData.grantDate,
-          apiData.creditType,
-          apiData.benefitCardLimit,
-          apiData.benefitCardBalance,
-          apiData.benefitStatus,
-          apiData.benefitEndDate,
-          apiData.consignedCardLimit,
-          apiData.consignedCardBalance,
-          apiData.consignedCreditBalance,
-          apiData.maxTotalBalance,
-          apiData.usedTotalBalance,
-          apiData.availableTotalBalance,
-          apiData.queryDate,
-          apiData.queryReturnDate,
-          apiData.queryReturnTime,
-          apiData.legalRepresentativeName,
-          apiData.disbursementBankAccount ? apiData.disbursementBankAccount.bank : null,
-          apiData.disbursementBankAccount ? apiData.disbursementBankAccount.branch : null,
-          apiData.disbursementBankAccount ? apiData.disbursementBankAccount.number : null,
-          apiData.disbursementBankAccount ? apiData.disbursementBankAccount.digit : null,
-          apiData.numberOfPortabilities,
-          data.ip_origem,
-          data.data_hora_registro,
-          data.nome_arquivo
-        ];
-        pool.query(insertQuery, params, (inErr, inRes) => {
-          if (inErr) {
-            return res.status(500).json({ success: false, error: inErr.message });
-          }
-          updateIpLimit(req, res, () => {
-            return res.json({
-              success: true,
-              message: "Registro inserido com sucesso!",
-              insertId: inRes.insertId
+        .then((response) => response.json())
+        .then((apiData) => {
+          const insertQuery = `
+            INSERT INTO inss_higienizado (
+              id, numero_beneficio, numero_documento, nome, estado, pensao, data_nascimento,
+              tipo_bloqueio, data_concessao, tipo_credito, limite_cartao_beneficio, saldo_cartao_beneficio,
+              status_beneficio, data_fim_beneficio, limite_cartao_consignado, saldo_cartao_consignado,
+              saldo_credito_consignado, saldo_total_maximo, saldo_total_utilizado, saldo_total_disponivel,
+              data_consulta, data_retorno_consulta, tempo_retorno_consulta, nome_representante_legal,
+              banco_desembolso, agencia_desembolso, numero_conta_desembolso, digito_conta_desembolso,
+              numero_portabilidades, ip_origem, data_hora_registro, nome_arquivo
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `;
+          const params = [
+            apiData.id,
+            apiData.benefitNumber,
+            apiData.documentNumber,
+            apiData.name,
+            apiData.state,
+            apiData.alimony,
+            apiData.birthDate,
+            apiData.blockType,
+            apiData.grantDate,
+            apiData.creditType,
+            apiData.benefitCardLimit,
+            apiData.benefitCardBalance,
+            apiData.benefitStatus,
+            apiData.benefitEndDate,
+            apiData.consignedCardLimit,
+            apiData.consignedCardBalance,
+            apiData.consignedCreditBalance,
+            apiData.maxTotalBalance,
+            apiData.usedTotalBalance,
+            apiData.availableTotalBalance,
+            apiData.queryDate,
+            apiData.queryReturnDate,
+            apiData.queryReturnTime,
+            apiData.legalRepresentativeName,
+            apiData.disbursementBankAccount ? apiData.disbursementBankAccount.bank : null,
+            apiData.disbursementBankAccount ? apiData.disbursementBankAccount.branch : null,
+            apiData.disbursementBankAccount ? apiData.disbursementBankAccount.number : null,
+            apiData.disbursementBankAccount ? apiData.disbursementBankAccount.digit : null,
+            apiData.numberOfPortabilities,
+            data.ip_origem,
+            data.data_hora_registro,
+            data.nome_arquivo
+          ];
+          pool.query(insertQuery, params, (inErr, inRes) => {
+            if (inErr) {
+              return res.status(500).json({ success: false, error: inErr.message });
+            }
+            updateIpLimit(req, res, () => {
+              return res.json({
+                success: true,
+                message: "Registro inserido com sucesso!",
+                insertId: inRes.insertId
+              });
             });
           });
+        })
+        .catch((apiErr) => {
+          return res.status(500).json({ success: false, error: apiErr.message });
         });
-      })
-      .catch(apiErr => {
-        return res.status(500).json({ success: false, error: apiErr.message });
-      });
     }
   });
 });
